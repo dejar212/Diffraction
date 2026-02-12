@@ -43,6 +43,7 @@ docs/ФИНАЛЬНЫЕ_РЕЗУЛЬТАТЫ.md
 
 # Archives and temporary content
 archives/
+docs_archive/
 
 # Все .txt в основной папке (корне проекта)
 /*.txt
