@@ -8,17 +8,17 @@ echo.
 echo Current directory: %CD%
 echo.
 
-REM Check if already compiled
-if exist "bin\Debug\Diffraction.exe" (
-    echo [OK] Found compiled file
-    echo.
-    echo Starting program...
-    start "" "bin\Debug\Diffraction.exe"
-    exit /b 0
+REM Close any running instances to avoid file locking
+echo Checking for running instances...
+tasklist /FI "IMAGENAME eq Diffraction.exe" 2>NUL | find /I /N "Diffraction.exe">NUL
+if "%ERRORLEVEL%"=="0" (
+    echo [!] Closing running instances of Diffraction.exe...
+    taskkill /F /IM Diffraction.exe >NUL 2>&1
+    timeout /t 1 /nobreak >NUL
+    echo [OK] Closed
 )
-
-echo [!] Program not compiled yet
 echo.
+
 echo ========================================================
 echo   COMPILING PROJECT
 echo ========================================================

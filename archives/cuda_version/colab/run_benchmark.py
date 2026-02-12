@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Colab helper script that
 1) Installs build dependencies (cmake, build-essential, ninja, python libs)
@@ -64,7 +62,7 @@ def ensure_packages() -> None:
 def ensure_gpu() -> None:
     try:
         run_cmd(["nvidia-smi"])
-    except Exception as exc:  # pylint: disable=broad-except
+    except Exception as exc:
         raise RuntimeError(
             "GPU недоступен. В Colab включите GPU (Runtime → Change runtime type → GPU)."
         ) from exc
@@ -75,7 +73,6 @@ def get_frequencies() -> Tuple[str, str]:
     gpu_freq = "Unknown"
     
     try:
-        # Get CPU info
         cpu_info = subprocess.check_output("lscpu", shell=True, text=True)
         for line in cpu_info.splitlines():
             if "Model name" in line:
@@ -85,14 +82,12 @@ def get_frequencies() -> Tuple[str, str]:
                 cpu_freq += f" @ {mhz/1000.0:.2f} GHz"
     except Exception:
         try:
-            # Fallback for some environments
             cpu_info = subprocess.check_output("grep 'model name' /proc/cpuinfo | head -n 1", shell=True, text=True)
             cpu_freq = cpu_info.split(":")[1].strip()
         except Exception:
             pass
 
     try:
-        # Get GPU info
         gpu_info = subprocess.check_output("nvidia-smi --query-gpu=name,clocks.max.sm --format=csv,noheader", shell=True, text=True)
         gpu_freq = gpu_info.strip()
     except Exception:
@@ -116,7 +111,6 @@ def parse_csv_block(text: str, marker: str = "N,") -> List[Tuple[int, float, flo
         return []
 
     start = header_match.start()
-    # Find next blank line or end of text to isolate CSV block
     end = text.find("\n\n", start)
     if end == -1:
         end = len(text)
@@ -165,17 +159,14 @@ def run_solver(executable: Path) -> str:
 
 
 def datasets_from_output(text: str, label: str) -> Tuple[TimingDataset, TimingDataset, List[Tuple[int, int, float]]]:
-    # Extract N-dependence
     n_rows = parse_csv_block(text, "N,")
     n_header = ("N", "MatrixTime_ms", "SolveTime_ms", "TotalTime_ms") if label == "CPU" else \
                ("N", "MatrixGPU_ms", "SolveCPU_ms", "Total_ms")
     
-    # Extract M-dependence
     m_rows = parse_csv_block(text, "M,")
     m_header = ("M", "MatrixTime_ms", "SolveTime_ms", "TotalTime_ms") if label == "CPU" else \
                ("M", "MatrixGPU_ms", "SolveCPU_ms", "Total_ms")
                
-    # Extract 3D data
     rows_3d = []
     marker_3d = "N,M,"
     csv_pattern = re.compile(rf"^\s*{marker_3d}\w+", re.MULTILINE)
@@ -202,7 +193,6 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
     import numpy as np
     from mpl_toolkits.mplot3d import Axes3D
 
-    # ... existing plot logic (N, M, Speedup) ...
     if cpu_n.rows and cuda_n.rows:
         cpu_df = pd.DataFrame(cpu_n.rows, columns=cpu_n.header).rename(
             columns={
@@ -232,7 +222,6 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
         fig.tight_layout()
         fig.savefig(PLOTS_DIR / "matrix_n_compare.png", dpi=300)
 
-        # Speedup plot for N
         fig2, ax2 = plt.subplots(figsize=(10, 6))
         ax2.plot(merged["N"], merged["MatrixTime_ms_CPU"] / merged["MatrixGPU_ms_CUDA"], 'o-', label="Ускорение матрицы", linewidth=2)
         ax2.set_xlabel("N")
@@ -243,10 +232,8 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
         fig2.tight_layout()
         fig2.savefig(PLOTS_DIR / "speedup_n.png", dpi=300)
         
-        # Save results to CSV for notebook
         merged.to_csv(PLOTS_DIR / "combined_results.csv", index=False)
 
-    # 2. Plot M-dependence
     if cpu_m.rows and cuda_m.rows:
         cpu_df_m = pd.DataFrame(cpu_m.rows, columns=cpu_m.header).rename(
             columns={
@@ -275,7 +262,6 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
         fig3.tight_layout()
         fig3.savefig(PLOTS_DIR / "matrix_m_compare.png", dpi=300)
 
-        # Speedup plot for M
         fig4, ax4 = plt.subplots(figsize=(10, 6))
         ax4.plot(merged_m["M"], merged_m["MatrixTime_ms_CPU"] / merged_m["MatrixGPU_ms_CUDA"], 's-', label="Ускорение матрицы", color='green', linewidth=2)
         ax4.set_xlabel("M")
@@ -286,10 +272,8 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
         fig4.tight_layout()
         fig4.savefig(PLOTS_DIR / "speedup_m.png", dpi=300)
         
-        # Save M results
         merged_m.to_csv(PLOTS_DIR / "combined_results_m.csv", index=False)
 
-    # 3. Plot 3D surfaces
     for label, data_3d in [("CPU", cpu_3d), ("CUDA", cuda_3d)]:
         if not data_3d: continue
         df3 = pd.DataFrame(data_3d, columns=["N", "M", "Time"])
@@ -297,7 +281,6 @@ def plot_comparison(cpu_n: TimingDataset, cuda_n: TimingDataset, cpu_m: TimingDa
         fig3d = plt.figure(figsize=(12, 8))
         ax3d = fig3d.add_subplot(111, projection='3d')
         
-        # Pivot for surface plot
         pivot = df3.pivot(index='N', columns='M', values='Time')
         X, Y = np.meshgrid(pivot.columns, pivot.index)
         Z = pivot.values
@@ -325,7 +308,6 @@ def main() -> None:
     print(f"CPU: {cpu_freq}")
     print(f"GPU: {gpu_freq}\n")
 
-    # Explicit frequency-aware comparison
     try:
         cpu_f = float(re.search(r"(\d+\.\d+)\s*GHz", cpu_freq).group(1)) if "GHz" in cpu_freq else 2.2
         gpu_f = float(re.search(r"(\d+)\s*MHz", gpu_freq).group(1)) / 1000.0 if "MHz" in gpu_freq else 1.59

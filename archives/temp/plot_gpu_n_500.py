@@ -17,7 +17,6 @@ def generate_from_real_data(file_path):
         lines = f.readlines()
         for line in lines:
             parts = line.split()
-            # Пропускаем заголовки и пустые строки, ищем строки начинающиеся с числа (N)
             if parts and parts[0].isdigit():
                 N.append(int(parts[0]))
                 matrix_times.append(float(parts[1]))
@@ -27,23 +26,19 @@ def generate_from_real_data(file_path):
     N = np.array(N)
     total_times = np.array(total_times)
 
-    # Построение графика
     plt.figure(figsize=(10, 7), dpi=100)
     plt.grid(True, linestyle='--', alpha=0.5)
     
-    # Реальные данные
-    plt.plot(N, total_times, marker='o', markerfacecolor='white', markeredgecolor='#348ABD', 
-             linestyle='-', color='#348ABD', label='Построение матрицы на GPU (реальные данные)', 
+    plt.plot(N, total_times, marker='o', markerfacecolor='white', markeredgecolor='
+             linestyle='-', color='
              linewidth=1.5, markersize=5)
 
-    # Аппроксимация параболой
     coeffs = np.polyfit(N, total_times, 2)
     p = np.poly1d(coeffs)
-    plt.plot(N, p(N), linestyle='--', color='#E24A33', 
+    plt.plot(N, p(N), linestyle='--', color='
              label=r'Аппроксимация $T(N) \approx a \cdot N^2 + b \cdot N + c$', 
              linewidth=2)
 
-    # Метки для первых 5 точек и последней
     offsets = [(0, 12), (0, -18), (0, 12), (0, -18), (0, 12)]
     for i in range(min(len(N), 5)):
         plt.annotate(f'{total_times[i]:.1f}', (N[i], total_times[i]), textcoords="offset points", 
@@ -64,7 +59,6 @@ def generate_from_real_data(file_path):
     plt.tight_layout()
     plt.savefig('temp/gpu_performance_n_500.png')
     
-    # Сохранение CSV
     with open('temp/gpu_performance_data.csv', 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['index', 'N', 'MatrixGPU_ms_CUDA', 'SolveTime_ms_CUDA', 'Total_ms_CUDA'])
@@ -74,7 +68,6 @@ def generate_from_real_data(file_path):
     print("График обновлен: temp/gpu_performance_n_500.png")
     print("CSV обновлен реальными данными: temp/gpu_performance_data.csv")
 
-# Пытаемся прочитать реальные данные из файла, если он есть
 results_path = 'temp/raw_results.txt'
 generate_from_real_data(results_path)
 plt.show()

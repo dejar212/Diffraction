@@ -7,7 +7,6 @@ def update_notebook(path):
 
     for cell in nb.cells:
         if cell.cell_type == 'code':
-            # Update Cell 12
             if "df = pd.read_csv('cuda_version/plots/combined_results.csv')" in cell.source:
                 cell.source = """import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,7 +16,6 @@ results_path = 'cuda_version/plots/combined_results.csv'
 if os.path.exists(results_path):
     df = pd.read_csv(results_path)
     
-    # 1. Сравнение СЛАУ
     plt.figure(figsize=(10, 5))
     plt.plot(df['N'], df['SolveTime_ms_CPU'], 'o-', label='СЛАУ CPU (Gauss)')
     plt.plot(df['N'], df['SolveTime_ms_CUDA'], 's-', label='СЛАУ CUDA (cuSOLVER)')
@@ -28,7 +26,6 @@ if os.path.exists(results_path):
     plt.grid(alpha=0.3)
     plt.show()
 
-    # 2. Сравнение матрицы (Зависимость от N)
     plt.figure(figsize=(10, 5))
     plt.plot(df['N'], df['MatrixTime_ms_CPU'], 'o-', label='Матрица CPU')
     plt.plot(df['N'], df['MatrixGPU_ms_CUDA'], 's-', label='Матрица GPU')
@@ -42,9 +39,8 @@ if os.path.exists(results_path):
 else:
     print("Файл результатов не найден. Сначала запустите бенчмарк.")"""
 
-            # Update Cell 13
             elif "speedup_matrix = df['MatrixTime_ms_CPU'] / df['MatrixGPU_ms_CUDA']" in cell.source and "speedup_solve =" in cell.source:
-                 cell.source = """# Графики ускорения (Speedup)
+                 cell.source = """
 if os.path.exists(results_path):
     plt.figure(figsize=(10, 5))
     speedup_matrix = df['MatrixTime_ms_CPU'] / df['MatrixGPU_ms_CUDA']
@@ -56,9 +52,8 @@ if os.path.exists(results_path):
     plt.grid(True, alpha=0.3)
     plt.show()"""
 
-            # Update Cell 14
             elif "gpu_perf = 'cuda_version/plots/gpu_performance.png'" in cell.source:
-                cell.source = """# Дополнительно: Зависимость от M
+                cell.source = """
 import glob
 from IPython.display import Image, display
 

@@ -10,7 +10,7 @@ The original bat files (ЗАПУСТИТЬ.bat, ДИАГНОСТИКА.bat) cont
 
 **Solution:** Use the new English-only bat files!
 
-## ✅ NEW BAT FILES (English, No Special Characters)
+##  NEW BAT FILES (English, No Special Characters)
 
 ### 1. **START.bat** - Main launcher
 ```
@@ -30,7 +30,7 @@ Diffraction-main\Diffraction-main\CLEAN_AND_BUILD.bat
 ```
 Use this if normal compilation fails.
 
-## 📋 Step-by-Step Instructions
+##  Step-by-Step Instructions
 
 ### Step 1: Run Diagnostic
 ```
@@ -78,7 +78,7 @@ Energy Balance Check:
   [SUCCESS] Energy conservation verified!
 ```
 
-## 🔧 Troubleshooting
+##  Troubleshooting
 
 ### Problem: "MSBuild not found"
 **Solution:** Install .NET Framework 4.7.2 Developer Pack
@@ -105,9 +105,9 @@ Run START.bat from there
 Your path looks OK: `C:\Users\vipde\Downloads\...`
 But if you have issues, move to: `C:\Projects\Diffraction\`
 
-## 📊 Expected Results
+##  Expected Results
 
-### ✅ GOOD (Fixed version):
+###  GOOD (Fixed version):
 - Energy balance error < 1%
 - Boundary conditions error < 1%
 - Total energy ≈ 100%
@@ -117,7 +117,7 @@ But if you have issues, move to: `C:\Projects\Diffraction\`
 - Boundary conditions error 99%
 - Total energy > 250%
 
-## 🎯 Quick Reference
+##  Quick Reference
 
 ### File Locations
 ```
@@ -145,14 +145,14 @@ Diffraction-main\
 
 3. **Bat files** - Created English versions without encoding issues
 
-## ℹ️ System Requirements
+## ℹ System Requirements
 
 - Windows 7 SP1 or higher
 - .NET Framework 4.7.2 or higher
 - MSBuild (from Visual Studio or .NET Developer Pack)
 - 100 MB free space
 
-## 🆘 Still Having Issues?
+##  Still Having Issues?
 
 1. Run DIAGNOSTIC.bat
 2. Copy all output to text file
@@ -165,4 +165,4 @@ Diffraction-main\
 
 ---
 
-**Good luck! 🚀**
+**Good luck! **

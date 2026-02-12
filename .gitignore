@@ -28,3 +28,21 @@ obj/
 # OS files
 Thumbs.db
 .DS_Store
+
+# GitHub related documentation
+PUSH_TO_GITHUB.md
+docs/PUSH_TO_GITHUB.md
+
+# Documentation files (keep only theory)
+docs/QUICKSTART_EN.md
+docs/БЫСТРЫЙ_СТАРТ.txt
+docs/КАК_ПРОВЕРИТЬ_ИСПРАВЛЕНИЯ.md
+docs/ОТЧЕТ_ОБ_ИСПРАВЛЕНИЯХ.md
+docs/РЕШЕНИЕ_ПРОБЛЕМ.md
+docs/ФИНАЛЬНЫЕ_РЕЗУЛЬТАТЫ.md
+
+# Archives and temporary content
+archives/
+COMMIT_INSTRUCTIONS.txt
+commit_msg.txt
+FINAL_SUMMARY.txt
