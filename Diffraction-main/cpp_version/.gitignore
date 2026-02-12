@@ -1,0 +1,47 @@
+# Compiled files
+*.exe
+*.o
+*.obj
+*.pdb
+*.ilk
+
+# Build directories
+build/*.exe
+build/*.txt
+build/*.obj
+
+# Output files
+build/output.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+
+
+
+

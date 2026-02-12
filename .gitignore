@@ -1,0 +1,30 @@
+# Compiled files
+*.exe
+*.dll
+*.pdb
+*.obj
+*.cache
+
+# Build directories
+bin/
+obj/
+.vs/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Temporary files
+*.tmp
+*.log
+~$*
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+Thumbs.db
+.DS_Store
