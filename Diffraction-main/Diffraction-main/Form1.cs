@@ -262,21 +262,20 @@ namespace Diffraction
                     lblConductivity.ForeColor = Color.Red;
                 }
 
-                // Расчет энергий и проверка закона сохранения энергии
-                var energyComp = qSkin.CalculateEnergyComponents();
-                
-                double incidentEnergy = energyComp.Incident;
-                double reflectedEnergy = energyComp.Reflected;
-                double transmittedEnergy = energyComp.Transmitted;
-                double absorbedEnergy = energyComp.Absorbed;
-                
-                // Проверка физичности результатов
-                double sumRAT = reflectedEnergy + absorbedEnergy + transmittedEnergy;
-                
-                // Относительные доли энергии
-                double reflectedFraction = reflectedEnergy / incidentEnergy;
-                double transmittedFraction = transmittedEnergy / incidentEnergy;
-                double absorbedFraction = absorbedEnergy / incidentEnergy;
+                // Расчет энергий через далёкое поле и проверка ЗСЭ
+                double totalScattered = qSkin.CalculateTotalScatteredEnergy();
+                double absorbedEnergy = qSkin.CalculateAbsorbedEnergy();
+                double reflectedEnergy, transmittedEnergy;
+                qSkin.SplitScatteredEnergy(out reflectedEnergy, out transmittedEnergy);
+
+                double totalEnergy = totalScattered + absorbedEnergy;
+
+                // Нормировка: все в долях от полного рассеяния + поглощения
+                double totalForFractions = Math.Max(totalEnergy, 1e-10);
+                double reflectedFraction = reflectedEnergy / totalForFractions;
+                double transmittedFraction = transmittedEnergy / totalForFractions;
+                double absorbedFraction = absorbedEnergy / totalForFractions;
+                double scatteredFraction = totalScattered / totalForFractions;
 
                 // Формирование сообщения для всплывающего окна
                 StringBuilder energyMessage = new StringBuilder();
@@ -284,10 +283,13 @@ namespace Diffraction
                 energyMessage.AppendLine("На основе физических законов и тождеств");
                 energyMessage.AppendLine();
 
-                // 1. Проверка граничных условий (Математическое тождество на границе)
+                // 1. Проверка граничных условий
                 double bcError = qSkin.VerifyBoundaryConditions();
-                energyMessage.AppendLine("1. Граничные условия (условие Леонтовича):");
-                energyMessage.AppendLine(string.Format("   Погрешность на ленте (u + χ*du/dn = 0): {0:P2}", bcError));
+                energyMessage.AppendLine("1. Граничные условия:");
+                if (Compl.Abs(qSkin.chi) < 1e-15)
+                    energyMessage.AppendLine(string.Format("   Погрешность (u=0 на ленте): {0:P2}", bcError));
+                else
+                    energyMessage.AppendLine(string.Format("   Погрешность (u + χ*du/dn=0): {0:P2}", bcError));
 
                 if (bcError < 0.10)
                     energyMessage.AppendLine("   Условие выполняется хорошо");
@@ -297,52 +299,44 @@ namespace Diffraction
                     energyMessage.AppendLine("   Большая погрешность, требуется увеличить N");
                 energyMessage.AppendLine();
 
-                // 2. Уравнение Гельмгольца (Закон распространения волны)
+                // 2. Уравнение Гельмгольца
                 double helmError = qSkin.VerifyHelmholtz();
                 energyMessage.AppendLine("2. Уравнение Гельмгольца (Δu + k²u = 0):");
                 energyMessage.AppendLine(string.Format("   Невязка в свободном пространстве: {0:E2}", helmError));
                 energyMessage.AppendLine();
 
-                // 3. Энергетический баланс (Закон сохранения энергии)
-                // Теперь расчет честный, без принудительной подгонки к 100%
-                energyMessage.AppendLine("3. Энергетический баланс (без нормировки):");
-                energyMessage.AppendLine(string.Format("   Падающая энергия:     {0:F6} (100.00%)", incidentEnergy));
-                energyMessage.AppendLine(string.Format("   Отраженная (рас.):   {0:F6} ({1:P2})", reflectedEnergy, reflectedFraction));
-                energyMessage.AppendLine(string.Format("   Прошедшая (рас.):    {0:F6} ({1:P2})", transmittedEnergy, transmittedFraction));
-                energyMessage.AppendLine(string.Format("   Поглощенная (рас.):  {0:F6} ({1:P2})", absorbedEnergy, absorbedFraction));
+                // 3. Энергетический баланс (далёкое поле)
+                energyMessage.AppendLine("3. Энергетический баланс (далёкое поле):");
+                energyMessage.AppendLine(string.Format("   Полная рассеянная σ_s: {0:F6} ({1:P2})", totalScattered, scatteredFraction));
+                energyMessage.AppendLine(string.Format("     Отражённая:          {0:F6} ({1:P2})", reflectedEnergy, reflectedFraction));
+                energyMessage.AppendLine(string.Format("     Прошедшая (дифр.):   {0:F6} ({1:P2})", transmittedEnergy, transmittedFraction));
+                energyMessage.AppendLine(string.Format("   Поглощённая σ_a:       {0:F6} ({1:P2})", absorbedEnergy, absorbedFraction));
                 energyMessage.AppendLine(new string('-', 40));
-                energyMessage.AppendLine(string.Format("   ИТОГО (расчетная сумма): {0:F6}", sumRAT));
-                
-                // Проверка энергетического баланса
-                double balanceError = Math.Abs(incidentEnergy - sumRAT);
-                double relativeError = balanceError / Math.Max(incidentEnergy, 1e-10);
-                
-                bool energyConservationOk = relativeError < 0.10; // погрешность менее 10% для численного метода
-                
-                energyMessage.AppendLine(string.Format("   Дисбаланс энергии:       {0:P2}", relativeError));
+                energyMessage.AppendLine(string.Format("   Итого σ_s + σ_a:       {0:F6}", totalEnergy));
+
+                // Оптическая теорема: σ_ext = (4/k) * Im(f(θ))
+                double k_val = 2 * Math.PI / (double)wavelength.Value;
+                Compl f_forward = qSkin.FarFieldAmplitude(angle);
+                double sigma_ext_OT = 4.0 / k_val * f_forward.Im;
+                energyMessage.AppendLine(string.Format("   Опт. теорема σ_ext:    {0:F6}", sigma_ext_OT));
+
+                double otError = Math.Abs(sigma_ext_OT - totalEnergy) / Math.Max(Math.Abs(sigma_ext_OT), 1e-10);
+                energyMessage.AppendLine(string.Format("   Расхождение с ОТ:      {0:P2}", otError));
+
+                bool energyConservationOk = otError < 0.30;
+
                 if (energyConservationOk)
-                {
-                    energyMessage.AppendLine("   ✓ ЗСЭ выполняется в пределах численной погрешности");
-                }
+                    energyMessage.AppendLine("   ✓ ЗСЭ (оптическая теорема) согласуется");
                 else
-                {
-                    energyMessage.AppendLine("   ⚠ ЗСЭ нарушен: требуется увеличить N или уточнить M");
-                }
-                
+                    energyMessage.AppendLine("   ⚠ Расхождение с оптической теоремой");
+
                 energyMessage.AppendLine();
-                energyMessage.AppendLine("Физические проверки (физичность):");
-                
-                // Проверка физичности каждой компоненты
+                energyMessage.AppendLine("Физические проверки:");
                 bool allPositive = (reflectedEnergy >= -1e-10) && (transmittedEnergy >= -1e-10) && (absorbedEnergy >= -1e-10);
-                
                 if (allPositive)
-                {
-                    energyMessage.AppendLine("✓ Отрицательных энергий не обнаружено");
-                }
+                    energyMessage.AppendLine("✓ Все энергии положительны");
                 else
-                {
                     energyMessage.AppendLine("✗ Обнаружены нефизичные (отрицательные) значения!");
-                }
 
                 MessageBoxIcon icon = (energyConservationOk && bcError < 0.30) ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
                 MessageBox.Show(

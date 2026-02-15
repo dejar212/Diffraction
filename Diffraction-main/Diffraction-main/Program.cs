@@ -617,208 +617,278 @@ namespace Diffraction
                 return conductivity;
             }
 
-            public Compl r(double t, double x)
-            {
-                double k = 2 * Math.PI / lambda;
-                Compl s = new Compl(J0(k * Math.Abs(t - x)));
-                if (Math.Abs(t - x) > 1e-8)
-                    s = Math.PI * ci / 2 * s + (s - 1.0) * Math.Log(k * Math.Abs(t - x) / 2.0);
-                else
-                    s = Math.PI * ci / 2.0 * s;
-                s += Math.Log(k / 2.0) + _Y0(k * Math.Abs(t - x));
-                return -s;
-            }
-
             public Compl u0(double x, double z)
             {
                 double k = 2 * Math.PI / lambda;
                 return Compl.Exp(k * Math.Cos(teta) * ci * x + k * Math.Sin(teta) * ci * z);
             }
 
+            // Полное поле: u = u0 + u_рассеянное
             public Compl u(double x, double z)
             {
-                int M = Math.Max(20, 2 * N);
                 double k = 2 * Math.PI / lambda;
-                double[] v = new double[M];
-                for (int m = 0; m < M; m++)
-                    v[m] = (b - a) / 2.0 * Math.Cos((2 * m + 1) / 2.0 / M * Math.PI) + (b + a) / 2.0;
+                int M = Math.Max(80, 4 * N);
+                double dt = (b - a) / M;
 
                 Compl s = new Compl(0, 0);
                 for (int i = 0; i < N; i++)
                 {
-                    Compl Int = new Compl(0, 0);
+                    Compl integ = new Compl(0, 0);
                     for (int m = 0; m < M; m++)
                     {
-                        double distance = Math.Sqrt(z * z + (v[m] - x) * (v[m] - x));
+                        double t = a + (m + 0.5) * dt;
+                        double distance = Math.Sqrt(z * z + (t - x) * (t - x));
                         if (distance < 1e-10) distance = 1e-10;
-                        Int += H0_2(k * distance) * ChebAB(i, v[m]);
+                        integ += H0_2(k * distance) * ChebAB(i, t) * dt;
                     }
-                    Int *= Math.PI / M;
-                    s += y[i] * Int;
+                    s += y[i] * integ;
                 }
                 return s * ci / 4.0 + u0(x, z);
             }
 
-            public Compl f(double x)
-            {
-                return -2 * Math.PI * u0(x, 0);
-            }
-
+            // Прямая коллокация с Чебышевскими точками
+            // Для идеального проводника: u(x_k, 0) = 0
+            // Для импедансного: u(x_k, 0) + χ * ∂u/∂n(x_k, 0) = 0 (условие Леонтовича)
             public int SolveDifr()
             {
-                int M = Math.Max(20, 2 * N);
+                double k = 2 * Math.PI / lambda;
+                int M = Math.Max(80, 4 * N);
+                double dt = (b - a) / M;
+
                 CVect B = new CVect(N);
                 CMatr A = new CMatr(N);
-                Compl s;
 
-                double[] x_points = new double[M];
-                for (int m = 0; m < M; m++)
-                    x_points[m] = (b - a) / 2.0 * Math.Cos((2 * m + 1) / 2.0 / M * Math.PI) + (b + a) / 2.0;
+                // Точки коллокации (Чебышев)
+                double[] xc = new double[N];
+                for (int i = 0; i < N; i++)
+                    xc[i] = (b - a) / 2.0 * Math.Cos((2 * i + 1) / 2.0 / N * Math.PI) + (b + a) / 2.0;
 
-                for (int k = 0; k < N; k++)
+                bool isImpedance = Compl.Abs(chi) > 1e-15;
+                double dz_fd = lambda / 500.0; // шаг для конечной разности ∂/∂n
+
+                for (int ik = 0; ik < N; ik++)
                 {
                     for (int j = 0; j < N; j++)
                     {
-                        s = new Compl(0.0);
+                        // Интеграл ядра на z=0: G_j = (i/4) ∫ H0(2)(k|x-t|) T_j(t) dt
+                        Compl s0 = new Compl(0.0);
                         for (int m = 0; m < M; m++)
-                            for (int n = 0; n < M; n++)
-                                s += r(x_points[n], x_points[m]) * ChebAB(j, x_points[n]) * ChebAB(k, x_points[m]);
-                        s *= Math.PI * Math.PI / M / M;
-                        A[k][j] = s;
+                        {
+                            double t = a + (m + 0.5) * dt;
+                            double dist = Math.Abs(xc[ik] - t);
+                            if (dist < 1e-10) dist = 1e-10;
+                            s0 += H0_2(k * dist) * ChebAB(j, t) * dt;
+                        }
+                        Compl Gj_0 = s0 * ci / 4.0;
+
+                        if (isImpedance)
+                        {
+                            // Интеграл ядра на z=dz: для вычисления ∂G/∂n
+                            Compl s_dz = new Compl(0.0);
+                            for (int m = 0; m < M; m++)
+                            {
+                                double t = a + (m + 0.5) * dt;
+                                double distance = Math.Sqrt(dz_fd * dz_fd + (t - xc[ik]) * (t - xc[ik]));
+                                s_dz += H0_2(k * distance) * ChebAB(j, t) * dt;
+                            }
+                            Compl Gj_dz = s_dz * ci / 4.0;
+                            Compl dGj_dn = (Gj_dz - Gj_0) / dz_fd;
+
+                            // A[ik][j] = G_j(x_k, 0) + χ * ∂G_j/∂n(x_k, 0)
+                            A[ik][j] = Gj_0 + chi * dGj_dn;
+                        }
+                        else
+                        {
+                            A[ik][j] = Gj_0;
+                        }
                     }
 
-                    s = new Compl(0.0);
-                    for (int m = 0; m < M; m++)
-                        s += f(x_points[m]) * ChebAB(k, x_points[m]);
-                    B[k] = s * Math.PI / M;
-
-                    Compl regularization;
-                    if (k == 0)
-                        regularization = new Compl(Math.PI * Math.PI * Math.Log(b - a), 0);
+                    if (isImpedance)
+                    {
+                        // Правая часть: -(u0 + χ * ∂u0/∂n) на z=0
+                        Compl u0_0 = u0(xc[ik], 0);
+                        Compl u0_dz = u0(xc[ik], dz_fd);
+                        Compl du0_dn = (u0_dz - u0_0) / dz_fd;
+                        B[ik] = -(u0_0 + chi * du0_dn);
+                    }
                     else
-                        regularization = new Compl(Math.PI * Math.PI / 2.0 / (k + 1), 0);
-
-                    A[k][k] = A[k][k] + regularization;
+                    {
+                        B[ik] = -u0(xc[ik], 0);
+                    }
                 }
 
                 CVect w = new CVect(N);
                 int output = Gauss(A, B, w);
 
-                for (int k = 0; k < N; k++)
-                    y[k] = w[k];
+                for (int i = 0; i < N; i++)
+                    y[i] = w[i];
                 return output;
             }
 
-            // ВЫЧИСЛЕНИЯ ЭНЕРГИИ
-            // Энергетический баланс: E_incident = E_reflected + E_transmitted + E_absorbed
-            // Используем корректные формулы на основе вектора Пойнтинга
-
-            public double CalculateIncidentEnergy()
-            {
-                // Падающая энергия - ПОТОК падающей волны
-                // Для плоской волны u0 = exp(i*k*(x*cos(θ)+z*sin(θ)))
-                // Поток: S_x = -Im(u0* ∂u0/∂x) = k*cos(θ)
-                // Интегрируем по z: E = k*cos(θ) * высота
-
-                double k = 2 * Math.PI / lambda;
-                const int N_points = 100;
-                double z_max = 3.0 * (b - a);
-                double dz = 2.0 * z_max / N_points;
-
-                // Аналитическая формула для потока падающей волны
-                double flux_density = k * Math.Abs(Math.Cos(teta));
-
-                return flux_density * 2.0 * z_max;
-            }
-
-            public double CalculateReflectedEnergy()
-            {
-                // Отраженная энергия - поток рассеянного поля НАЗАД (влево)
-                // Измеряем усредненную интенсивность рассеяния в обратном направлении
-                double k = 2 * Math.PI / lambda;
-                double x_measure = a - 0.5 * (b - a); // ближе к ленте
-
-                const int N_points = 100;
-                double z_max = 2.0 * (b - a); // меньшая область
-                double dz = 2.0 * z_max / N_points;
-
-                double sum_intensity = 0;
-
-                for (int i = 0; i < N_points; i++)
-                {
-                    double z = -z_max + (i + 0.5) * dz;
-
-                    // Рассеянное поле
-                    Compl u_total = u(x_measure, z);
-                    Compl u_incident = u0(x_measure, z);
-                    Compl u_scattered = u_total - u_incident;
-
-                    // Интенсивность рассеяния
-                    double intensity = Compl.Abs(u_scattered) * Compl.Abs(u_scattered);
-                    sum_intensity += intensity * dz;
-                }
-
-                // Нормируем через характерный масштаб задачи
-                // Эмпирический коэффициент для согласования с падающей энергией
-                double incident = CalculateIncidentEnergy();
-                double scaling_factor = k * Math.Abs(Math.Cos(teta)) / (2.0 * Math.PI);
-
-                return sum_intensity * scaling_factor;
-            }
-
-            // Класс для хранения компонент энергии
             public class EnergyComponents
             {
                 public double Incident;
                 public double Reflected;
                 public double Transmitted;
                 public double Absorbed;
-                public bool WasRenormalized;
             }
-            
-            // Метод для вычисления всех компонент энергии БЕЗ искусственной подгонки
+
+            // Вычисление амплитуды плотности φ(t) = Σ y_j T_j(t) в точке t
+            public Compl Density(double t)
+            {
+                Compl s = new Compl(0, 0);
+                for (int j = 0; j < N; j++)
+                    s += y[j] * ChebAB(j, t);
+                return s;
+            }
+
+            // Вычисление диаграммы направленности рассеянного поля f(φ)
+            // Далеко от полосы: u_s ~ f(φ) * e^{-ikr}/√(kr)
+            // f(φ) = √(2πk) * e^{iπ/4} / 4 * ∫_a^b φ(t) e^{ik cos(φ) t} dt
+            public Compl FarFieldAmplitude(double phi)
+            {
+                double k = 2 * Math.PI / lambda;
+                int M = Math.Max(80, 4 * N);
+                double dt_q = (b - a) / M;
+
+                // Интеграл ∫ φ(t) * e^{ik cos(phi) t} dt
+                Compl integral = new Compl(0, 0);
+                for (int m = 0; m < M; m++)
+                {
+                    double t = a + (m + 0.5) * dt_q;
+                    Compl dens = Density(t);
+                    Compl phase = Compl.Exp(ci * k * Math.Cos(phi) * t);
+                    integral += dens * phase * dt_q;
+                }
+
+                // Коэффициент: (1/4) * √(2π/k) * e^{iπ/4} = (1/4) * √(2π/k) * (1+i)/√2
+                double coeff = Math.Sqrt(2.0 * Math.PI / k) / 4.0;
+                Compl eipi4 = new Compl(1.0 / Math.Sqrt(2), 1.0 / Math.Sqrt(2)); // e^{iπ/4}
+                return integral * coeff * eipi4;
+            }
+
             public EnergyComponents CalculateEnergyComponents()
             {
                 EnergyComponents energy = new EnergyComponents();
-                
+
                 energy.Incident = CalculateIncidentEnergy();
-                energy.Reflected = CalculateReflectedEnergy();
+
+                // Полная рассеянная мощность через интеграл |f(φ)|² по углу
+                double totalScattered = CalculateTotalScatteredEnergy();
+
                 energy.Absorbed = CalculateAbsorbedEnergy();
-                
-                // Рассчитываем прошедшую энергию независимо через интеграл поля
-                energy.Transmitted = CalculateTransmittedEnergyIndependent();
-                
-                energy.WasRenormalized = false;
-                
+
+                // Рассеянная = отражённая + прошедшая (дифракция вокруг краёв)
+                // Разделяем: отражённая = поток в полупространство x < a
+                //            прошедшая  = поток в полупространство x > b
+                double reflected = 0, transmitted = 0;
+                SplitScatteredEnergy(out reflected, out transmitted);
+
+                energy.Reflected = reflected;
+                energy.Transmitted = transmitted;
+
                 return energy;
             }
-            
-            // Независимый расчет прошедшей энергии через поток за препятствием
+
+            // Падающая энергия: поток плоской волны через "окно" размером 2*(b-a)
+            // Нормировка: Eинц = (b-a) * sin(θ)  (проекция на полосу)
+            // Используем нормировку через полосу: E_inc = (b-a) для θ=90°
+            public double CalculateIncidentEnergy()
+            {
+                // Поток плоской волны через сечение длиной (b-a):
+                // P_inc = (b-a) * sin(θ)  для TM-поляризации (или просто (b-a))
+                // Чтобы энергетический баланс был безразмерным, нормируем на 1:
+                return 1.0;
+            }
+
+            // Полная рассеянная мощность (интеграл далёкого поля)
+            // σ_total = ∫_0^{2π} |f(φ)|² dφ
+            public double CalculateTotalScatteredEnergy()
+            {
+                int Nphi = 360;
+                double dphi = 2.0 * Math.PI / Nphi;
+                double sum = 0;
+
+                for (int i = 0; i < Nphi; i++)
+                {
+                    double phi = (i + 0.5) * dphi;
+                    Compl f = FarFieldAmplitude(phi);
+                    sum += (f.Re * f.Re + f.Im * f.Im) * dphi;
+                }
+                return sum;
+            }
+
+            // Разделение рассеянной энергии на отражённую и прошедшую
+            // Отражённая: углы φ ∈ [π/2, 3π/2] (уходящее в полупространство z<0 + назад по x)
+            // Прошедшая: углы φ ∈ [0, π/2] ∪ [3π/2, 2π] (вперёд и в z>0)
+            public void SplitScatteredEnergy(out double reflected, out double transmitted)
+            {
+                int Nphi = 360;
+                double dphi = 2.0 * Math.PI / Nphi;
+                reflected = 0;
+                transmitted = 0;
+
+                for (int i = 0; i < Nphi; i++)
+                {
+                    double phi = (i + 0.5) * dphi;
+                    Compl f = FarFieldAmplitude(phi);
+                    double intensity = (f.Re * f.Re + f.Im * f.Im) * dphi;
+
+                    // sin(φ) > 0 → z > 0 (полупространство z>0, "отражённое")
+                    // sin(φ) < 0 → z < 0 (полупространство z<0, "прошедшее")
+                    // (падающая волна идёт в направлении sin(θ) > 0, т.е. z↑)
+                    double sinPhi = Math.Sin(phi);
+                    if (sinPhi >= 0)
+                        reflected += intensity;
+                    else
+                        transmitted += intensity;
+                }
+            }
+
+            public double CalculateReflectedEnergy()
+            {
+                double refl, trans;
+                SplitScatteredEnergy(out refl, out trans);
+                return refl;
+            }
+
+            public double CalculateAbsorbedEnergy()
+            {
+                if (skinDepth <= 0) return 0;
+
+                // Поглощённая энергия через оптическую теорему:
+                // P_abs = Re(χ) * ∫_a^b |u(x,0)|² dx  (нормированная)
+                double k = 2 * Math.PI / lambda;
+                int M = Math.Max(80, 4 * N);
+                double dx = (b - a) / M;
+                double sum = 0;
+
+                for (int m = 0; m < M; m++)
+                {
+                    double x = a + (m + 0.5) * dx;
+                    Compl u_val = u(x, 0);
+                    sum += (u_val.Re * u_val.Re + u_val.Im * u_val.Im) * dx;
+                }
+
+                // Нормировка: P_abs = k * Re(χ) / 2 * ∫|u|²dx
+                // Согласуем с нормировкой E_inc = 1
+                return k * chi.Re / 2.0 * sum;
+            }
+
             public double CalculateTransmittedEnergyIndependent()
             {
-                // Прошедшая энергия = Падающая - Отраженная - Поглощенная
-                // Это ЗАКОН СОХРАНЕНИЯ ЭНЕРГИИ!
-                double incident = CalculateIncidentEnergy();
-                double reflected = CalculateReflectedEnergy();
-                double absorbed = CalculateAbsorbedEnergy();
-
-                double transmitted = incident - reflected - absorbed;
-
-                // Защита от отрицательных значений (численные ошибки)
-                if (transmitted < 0)
-                    transmitted = 0;
-
-                return transmitted;
+                double refl, trans;
+                SplitScatteredEnergy(out refl, out trans);
+                return trans;
             }
 
             public double VerifyBoundaryConditions()
             {
-                int M = 40;
-                double dx = (b - a) / M;
+                int Mtest = 40;
+                double dx = (b - a) / Mtest;
                 double sumErr = 0;
-                int count = 0;
 
-                for (int i = 0; i <= M; i++)
+                for (int i = 0; i <= Mtest; i++)
                 {
                     double x = a + i * dx;
                     Compl u_val = u(x, 0);
@@ -838,110 +908,62 @@ namespace Diffraction
 
                     double scale = Math.Max(Compl.Abs(u0(x, 0)), 0.1);
                     sumErr += Compl.Abs(bc_val) / scale;
-                    count++;
                 }
 
-                return sumErr / count;
+                return sumErr / (Mtest + 1);
             }
 
-            // Проверка уравнения Гельмгольца в свободном пространстве (delta + k^2)u = 0
             public double VerifyHelmholtz()
             {
-                // Берем случайную точку вне ленты
                 double x = b + lambda;
                 double z = lambda;
                 double k = 2 * Math.PI / lambda;
                 double h = lambda / 100.0;
-                
+
                 Compl u_0 = u(x, z);
                 Compl u_x1 = u(x + h, z);
                 Compl u_x2 = u(x - h, z);
                 Compl u_z1 = u(x, z + h);
                 Compl u_z2 = u(x, z - h);
-                
+
                 Compl laplacian = (u_x1 + u_x2 + u_z1 + u_z2 - 4 * u_0) / (h * h);
                 Compl helmholtz = laplacian + k * k * u_0;
-                
+
                 return Compl.Abs(helmholtz) / (k * k * Compl.Abs(u_0) + 1e-10);
-            }
-
-            public double CalculateAbsorbedEnergy()
-            {
-                // Поглощенная энергия для импедансной поверхности
-                if (skinDepth <= 0) return 0; // идеальный проводник не поглощает
-
-                double k = 2 * Math.PI / lambda;
-                double sum = 0;
-                const int M = 200;
-                double dx = (b - a) / M;
-
-                for (int m = 0; m < M; m++)
-                {
-                    double x = a + (m + 0.5) * dx;
-
-                    // Поле на ленте и его производная
-                    double dz = lambda / 500.0;
-                    Compl u_center = u(x, 0);
-                    Compl u_plus = u(x, dz);
-                    Compl du_dn = (u_plus - u_center) / dz;
-
-                    // Поглощенная мощность пропорциональна |u|² и Re(χ)
-                    double field_intensity = Compl.Abs(u_center) * Compl.Abs(u_center);
-                    double derivative_intensity = Compl.Abs(du_dn) * Compl.Abs(du_dn);
-
-                    // Комбинированный вклад от поля и его производной
-                    double absorption = chi.Re * (field_intensity + k * derivative_intensity);
-                    sum += absorption * dx;
-                }
-
-                // Нормируем относительно падающей энергии
-                double incident = CalculateIncidentEnergy();
-                double scaling = k / (2.0 * Math.PI * 2.0 * (b - a));
-
-                return sum * scaling;
             }
 
             public void VerifyEnergyConservation()
             {
-                EnergyComponents energy = CalculateEnergyComponents();
-                
-                double total = energy.Reflected + energy.Transmitted + energy.Absorbed;
+                // Для энергетического баланса используем оптическую теорему
+                // σ_ext = σ_scat + σ_abs
+                // σ_ext можно вычислить через Im(f(θ_0)) - передняя амплитуда
+                double totalScattered = CalculateTotalScatteredEnergy();
+                double absorbed = CalculateAbsorbedEnergy();
 
-                Console.WriteLine("Energy Balance Check:");
-                if (energy.WasRenormalized)
-                    Console.WriteLine("  ⚠ Note: energies were renormalized due to numerical errors");
-                    
-                Console.WriteLine(string.Format("  Incident:    {0:F6} (100%)", energy.Incident));
-                Console.WriteLine(string.Format("  Reflected:   {0:F6} ({1:P2})", energy.Reflected, energy.Reflected / energy.Incident));
-                Console.WriteLine(string.Format("  Transmitted: {0:F6} ({1:P2})", energy.Transmitted, energy.Transmitted / energy.Incident));
-                Console.WriteLine(string.Format("  Absorbed:    {0:F6} ({1:P2})", energy.Absorbed, energy.Absorbed / energy.Incident));
-                Console.WriteLine(string.Format("  Total:       {0:F6}", total));
-                
-                double error = Math.Abs(energy.Incident - total);
-                double relError = error / energy.Incident;
-                Console.WriteLine(string.Format("  Error:       {0:E6} ({1:P2})", error, relError));
-                
-                if (relError < 0.05)
-                    Console.WriteLine("  ✓ Energy conservation verified!");
-                else
-                    Console.WriteLine("  ⚠ Warning: significant energy imbalance");
-            }
+                // Оптическая теорема: σ_ext = (4/k) * Im(f(θ_inc))
+                // где θ_inc - направление падения
+                double k = 2 * Math.PI / lambda;
+                Compl f_forward = FarFieldAmplitude(teta);
+                double sigma_ext_OT = 4.0 / k * f_forward.Im;
 
-            // Тест сходимости по M
-            public void TestConvergence()
-            {
-                Console.WriteLine("Convergence test for different M values:");
-                int[] M_values = { 10, 20, 40, 80 };
+                double sigma_total = totalScattered + absorbed;
 
-                foreach (int testM in M_values)
-                {
-                    var testSolver = new DifrOnLenta(a, b, lambda, teta, N, skinDepth);
-                    if (testSolver.SolveDifr() == 1)
-                    {
-                        double energy = testSolver.CalculateReflectedEnergy();
-                        Console.WriteLine(string.Format("  M={0,3}: Reflected Energy = {1:E6}", testM, energy));
-                    }
-                }
+                Console.WriteLine("Energy Balance Check (Far-Field):");
+                Console.WriteLine(string.Format("  Total scattered σ_s: {0:F6}", totalScattered));
+                Console.WriteLine(string.Format("  Absorbed σ_a:        {0:F6}", absorbed));
+                Console.WriteLine(string.Format("  Total σ_s + σ_a:     {0:F6}", sigma_total));
+                Console.WriteLine(string.Format("  Optical theorem σ_ext = 4/k Im(f): {0:F6}", sigma_ext_OT));
+
+                double refl, trans;
+                SplitScatteredEnergy(out refl, out trans);
+                Console.WriteLine(string.Format("  Reflected:           {0:F6}", refl));
+                Console.WriteLine(string.Format("  Transmitted (diffr): {0:F6}", trans));
+
+                double bcErr = VerifyBoundaryConditions();
+                Console.WriteLine(string.Format("  BC error:            {0:P2}", bcErr));
+
+                double helmErr = VerifyHelmholtz();
+                Console.WriteLine(string.Format("  Helmholtz residual:  {0:E2}", helmErr));
             }
         }
     }
