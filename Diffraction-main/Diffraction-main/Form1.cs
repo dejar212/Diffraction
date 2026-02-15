@@ -289,15 +289,12 @@ namespace Diffraction
                 energyMessage.AppendLine("1. Граничные условия (условие Леонтовича):");
                 energyMessage.AppendLine(string.Format("   Погрешность на ленте (u + χ*du/dn = 0): {0:P2}", bcError));
 
-                // ПРИМЕЧАНИЕ: Большая погрешность (до 98%) является ограничением метода решения
-                // (граничные интегральные ур-я для идеального проводника), а не ошибкой в расчетах.
-                // Поглощение учитывается постфактум через χ, что обеспечивает выполнение ЗСЭ.
-                if (bcError < 0.20)
-                    energyMessage.AppendLine("   ✓ Условие выполняется идеально");
-                else if (bcError < 0.95)
-                    energyMessage.AppendLine("   ✓ Условие выполняется (метод учитывает импеданс постфактум)");
+                if (bcError < 0.10)
+                    energyMessage.AppendLine("   Условие выполняется хорошо");
+                else if (bcError < 0.30)
+                    energyMessage.AppendLine("   Условие выполняется удовлетворительно");
                 else
-                    energyMessage.AppendLine("   ✓ Ограничение метода компенсируется через энергобаланс");
+                    energyMessage.AppendLine("   Большая погрешность, требуется увеличить N");
                 energyMessage.AppendLine();
 
                 // 2. Уравнение Гельмгольца (Закон распространения волны)
@@ -347,10 +344,7 @@ namespace Diffraction
                     energyMessage.AppendLine("✗ Обнаружены нефизичные (отрицательные) значения!");
                 }
 
-                // Показываем всплывающее окно с результатами проверки
-                // bcError до 99% - это нормально для метода граничных интегральных уравнений
-                // Главное - выполнение закона сохранения энергии!
-                MessageBoxIcon icon = (energyConservationOk && bcError < 0.99) ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
+                MessageBoxIcon icon = (energyConservationOk && bcError < 0.30) ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
                 MessageBox.Show(
                     energyMessage.ToString(),
                     "Контроль точности (научная верификация)",

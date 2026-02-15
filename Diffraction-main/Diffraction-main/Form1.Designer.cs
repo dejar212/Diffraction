@@ -517,7 +517,8 @@ namespace Diffraction
             // skinDepthInput
             // 
             this.skinDepthInput = new System.Windows.Forms.NumericUpDown();
-            this.skinDepthInput.DecimalPlaces = 3;
+            this.skinDepthInput.DecimalPlaces = 5;
+            this.skinDepthInput.Increment = 0.00001m;
             this.skinDepthInput.Location = new System.Drawing.Point(120, 20);
             this.skinDepthInput.Name = "skinDepthInput";
             this.skinDepthInput.Size = new System.Drawing.Size(100, 22);

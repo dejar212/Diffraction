@@ -421,12 +421,11 @@ namespace Diffraction
                     b[maxN] = s1;
                 }
 
-                s = 1 / A[i][i];
-                // проверка на малость вместо точного равенства
-                if (Compl.Abs(s) < 1e-12)
+                if (Compl.Abs(A[i][i]) < 1e-12)
                 {
                     return -1;
                 }
+                s = 1 / A[i][i];
                 for (int j = i + 1; j < N; j++)
                 {
                     s1 = A[j][i] * s;
@@ -636,11 +635,10 @@ namespace Diffraction
                 return Compl.Exp(k * Math.Cos(teta) * ci * x + k * Math.Sin(teta) * ci * z);
             }
 
-            // Вычисление полного поля u(x,z)
-            // Скин-эффект корректно учтен в коэффициентах y[i] через граничное условие Леонтовича
             public Compl u(double x, double z)
             {
-                const int M = 20;
+                int M = Math.Max(20, 2 * N);
+                double k = 2 * Math.PI / lambda;
                 double[] v = new double[M];
                 for (int m = 0; m < M; m++)
                     v[m] = (b - a) / 2.0 * Math.Cos((2 * m + 1) / 2.0 / M * Math.PI) + (b + a) / 2.0;
@@ -649,16 +647,11 @@ namespace Diffraction
                 for (int i = 0; i < N; i++)
                 {
                     Compl Int = new Compl(0, 0);
-                    for (int m = 0; m < M; m++) 
+                    for (int m = 0; m < M; m++)
                     {
                         double distance = Math.Sqrt(z * z + (v[m] - x) * (v[m] - x));
-                        Compl H = H0_2(2 * Math.PI / lambda * distance);
-                        
-                        // Не применяем дополнительное затухание!
-                        // Скин-эффект уже корректно учтен в коэффициентах y[i] 
-                        // через модификацию системы уравнений с коэффициентом χ
-                        
-                        Int += H * ChebAB(i, v[m]);
+                        if (distance < 1e-10) distance = 1e-10;
+                        Int += H0_2(k * distance) * ChebAB(i, v[m]);
                     }
                     Int *= Math.PI / M;
                     s += y[i] * Int;
@@ -673,13 +666,13 @@ namespace Diffraction
 
             public int SolveDifr()
             {
-                const int M = 20;
+                int M = Math.Max(20, 2 * N);
                 CVect B = new CVect(N);
                 CMatr A = new CMatr(N);
                 Compl s;
 
-                double[] x_points = new double[M]; 
-                for (int m = 0; m < M; m++) 
+                double[] x_points = new double[M];
+                for (int m = 0; m < M; m++)
                     x_points[m] = (b - a) / 2.0 * Math.Cos((2 * m + 1) / 2.0 / M * Math.PI) + (b + a) / 2.0;
 
                 for (int k = 0; k < N; k++)
@@ -699,7 +692,6 @@ namespace Diffraction
                         s += f(x_points[m]) * ChebAB(k, x_points[m]);
                     B[k] = s * Math.PI / M;
 
-                    // Диагональные элементы с учетом регуляризации
                     Compl regularization;
                     if (k == 0)
                         regularization = new Compl(Math.PI * Math.PI * Math.Log(b - a), 0);
@@ -707,17 +699,6 @@ namespace Diffraction
                         regularization = new Compl(Math.PI * Math.PI / 2.0 / (k + 1), 0);
 
                     A[k][k] = A[k][k] + regularization;
-
-                    // ПРИМЕЧАНИЕ: Граничное условие Леонтовича НЕ применяется в методе решения
-                    // Причина: Текущий метод (граничные интегральные уравнения с коллокацией)
-                    // изначально разработан для идеального проводника.
-                    // Правильный учет импедансных граничных условий требует модифицированной
-                    // функции Грина, что выходит за рамки текущей реализации.
-                    //
-                    // ВМЕСТО ЭТОГО: Решаем для идеального проводника, а поглощение энергии
-                    // учитываем постфактум в CalculateAbsorbedEnergy() через коэффициент χ.
-                    // Это физически корректно, т.к. для малых skinDepth поглощение мало
-                    // и может рассматриваться как малая поправка к решению для идеального проводника.
                 }
 
                 CVect w = new CVect(N);
@@ -830,16 +811,6 @@ namespace Diffraction
                 return transmitted;
             }
 
-            // Проверка граничных условий на ленте
-            // Возвращает среднюю относительную ошибку выполнения условия u + chi * du/dn = 0
-            //
-            // ВАЖНО: Большая погрешность (~98%) является ОГРАНИЧЕНИЕМ МЕТОДА РЕШЕНИЯ.
-            // Текущий метод (граничные интегральные уравнения с коллокацией) разработан
-            // для идеального проводника и не может точно учесть импедансные граничные условия
-            // без модификации функции Грина. Это НЕ ошибка в расчетах!
-            //
-            // КОМПЕНСАЦИЯ: Поглощение энергии учитывается постфактум через коэффициент χ
-            // в методе CalculateAbsorbedEnergy(), что обеспечивает выполнение ЗСЭ.
             public double VerifyBoundaryConditions()
             {
                 int M = 40;
@@ -851,20 +822,25 @@ namespace Diffraction
                 {
                     double x = a + i * dx;
                     Compl u_val = u(x, 0);
-                    
-                    // Численная производная по нормали (z)
-                    double dz = lambda / 500.0;
-                    Compl u_plus = u(x, dz);
-                    Compl du_dn = (u_plus - u_val) / dz;
-                    
-                    // Условие Леонтовича: u + chi * du/dn = 0
-                    Compl bc_val = u_val + chi * du_dn;
-                    
-                    double scale = Math.Max(Compl.Abs(u_val), 0.1);
+
+                    Compl bc_val;
+                    if (Compl.Abs(chi) < 1e-15)
+                    {
+                        bc_val = u_val;
+                    }
+                    else
+                    {
+                        double dz = lambda / 500.0;
+                        Compl u_plus = u(x, dz);
+                        Compl du_dn = (u_plus - u_val) / dz;
+                        bc_val = u_val + chi * du_dn;
+                    }
+
+                    double scale = Math.Max(Compl.Abs(u0(x, 0)), 0.1);
                     sumErr += Compl.Abs(bc_val) / scale;
                     count++;
                 }
-                
+
                 return sumErr / count;
             }
 
