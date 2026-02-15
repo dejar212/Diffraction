@@ -24,6 +24,7 @@ obj/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS files
 Thumbs.db
