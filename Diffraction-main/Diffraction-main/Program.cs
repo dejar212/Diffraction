@@ -535,6 +535,40 @@ namespace Diffraction
             return 2.0 / Math.PI * (J0(x) * Math.Log(x / 2) + _Y0(x));
         }
 
+        public static double J1(double x)
+        {
+            if (Math.Abs(x) < 1e-10)
+                return 0;
+
+            const double eps = 1e-4;
+            const int maxIter = 10000;
+            double sum = 0, s = x / 2.0;
+            double k2 = 1, xS = x / 2.0;
+            double x2 = x * x / 4;
+            double _1 = -1;
+            long k = 0;
+
+            while (Math.Abs(s) > eps && k < maxIter)
+            {
+                sum += s;
+                k++;
+                _1 = -_1;
+                k2 /= k * (k + 1);
+                xS *= x2;
+                s = _1 * k2 * xS;
+            }
+
+            return sum;
+        }
+
+        public static double N1(double x)
+        {
+            if (Math.Abs(x) < 1e-10)
+                return double.NegativeInfinity;
+
+            return 2.0 / Math.PI * (J1(x) * Math.Log(x / 2.0) - 1.0 / x + x / 4.0);
+        }
+
         public static Compl H0_1(double x)
         {
             return N0(x) * ci + J0(x);
@@ -543,6 +577,11 @@ namespace Diffraction
         public static Compl H0_2(double x)
         {
             return J0(x) - N0(x) * ci;
+        }
+
+        public static Compl H1_2(double x)
+        {
+            return J1(x) - N1(x) * ci;
         }
 
         public class DifrOnLenta
@@ -618,7 +657,7 @@ namespace Diffraction
                 return conductivity;
             }
 
-            public Compl r(double t, double x)
+            public Compl r_original(double t, double x)
             {
                 double k = 2 * Math.PI / lambda;
                 Compl s = new Compl(J0(k * Math.Abs(t - x)));
@@ -630,14 +669,30 @@ namespace Diffraction
                 return -s;
             }
 
+            public Compl dr_dn(double t, double x)
+            {
+                double k = 2 * Math.PI / lambda;
+                double dist = Math.Abs(t - x);
+                if (dist < 1e-10)
+                    return new Compl(0, 0);
+
+                Compl H1 = H1_2(k * dist);
+                return ci / 4.0 * k * H1;
+            }
+
+            public Compl r(double t, double x)
+            {
+                Compl g = r_original(t, x);
+                Compl dg = dr_dn(t, x);
+                return g + chi * dg;
+            }
+
             public Compl u0(double x, double z)
             {
                 double k = 2 * Math.PI / lambda;
                 return Compl.Exp(k * Math.Cos(teta) * ci * x + k * Math.Sin(teta) * ci * z);
             }
 
-            // Вычисление полного поля u(x,z)
-            // Скин-эффект корректно учтен в коэффициентах y[i] через граничное условие Леонтовича
             public Compl u(double x, double z)
             {
                 const int M = 20;
@@ -649,15 +704,10 @@ namespace Diffraction
                 for (int i = 0; i < N; i++)
                 {
                     Compl Int = new Compl(0, 0);
-                    for (int m = 0; m < M; m++) 
+                    for (int m = 0; m < M; m++)
                     {
                         double distance = Math.Sqrt(z * z + (v[m] - x) * (v[m] - x));
                         Compl H = H0_2(2 * Math.PI / lambda * distance);
-                        
-                        // Не применяем дополнительное затухание!
-                        // Скин-эффект уже корректно учтен в коэффициентах y[i] 
-                        // через модификацию системы уравнений с коэффициентом χ
-                        
                         Int += H * ChebAB(i, v[m]);
                     }
                     Int *= Math.PI / M;
@@ -707,17 +757,6 @@ namespace Diffraction
                         regularization = new Compl(Math.PI * Math.PI / 2.0 / (k + 1), 0);
 
                     A[k][k] = A[k][k] + regularization;
-
-                    // ПРИМЕЧАНИЕ: Граничное условие Леонтовича НЕ применяется в методе решения
-                    // Причина: Текущий метод (граничные интегральные уравнения с коллокацией)
-                    // изначально разработан для идеального проводника.
-                    // Правильный учет импедансных граничных условий требует модифицированной
-                    // функции Грина, что выходит за рамки текущей реализации.
-                    //
-                    // ВМЕСТО ЭТОГО: Решаем для идеального проводника, а поглощение энергии
-                    // учитываем постфактум в CalculateAbsorbedEnergy() через коэффициент χ.
-                    // Это физически корректно, т.к. для малых skinDepth поглощение мало
-                    // и может рассматриваться как малая поправка к решению для идеального проводника.
                 }
 
                 CVect w = new CVect(N);
@@ -830,16 +869,6 @@ namespace Diffraction
                 return transmitted;
             }
 
-            // Проверка граничных условий на ленте
-            // Возвращает среднюю относительную ошибку выполнения условия u + chi * du/dn = 0
-            //
-            // ВАЖНО: Большая погрешность (~98%) является ОГРАНИЧЕНИЕМ МЕТОДА РЕШЕНИЯ.
-            // Текущий метод (граничные интегральные уравнения с коллокацией) разработан
-            // для идеального проводника и не может точно учесть импедансные граничные условия
-            // без модификации функции Грина. Это НЕ ошибка в расчетах!
-            //
-            // КОМПЕНСАЦИЯ: Поглощение энергии учитывается постфактум через коэффициент χ
-            // в методе CalculateAbsorbedEnergy(), что обеспечивает выполнение ЗСЭ.
             public double VerifyBoundaryConditions()
             {
                 int M = 40;
