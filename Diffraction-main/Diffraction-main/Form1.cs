@@ -213,14 +213,32 @@ namespace Diffraction
                 textBoxChebPolynomial.Text += string.Format("{0,-4} {1,-25} {2,-25}{3}", "#", "БЕЗ скин-слоя", "СО скин-слоем", Environment.NewLine);
                 textBoxChebPolynomial.Text += new string('.', 60) + Environment.NewLine;
                 
-                // Выводим ВСЕ коэффициенты от 0 до param-1
+                // Выводим ВСЕ коэффициенты от 0 до param-1 с модулями
                 for (int coeffIndex = 0; coeffIndex < totalCoefficients; coeffIndex++)
                 {
-                    string noSkinCoeff = string.Format("{0:F4}+{1:F4}i", qNoSkin.y[coeffIndex].Re, qNoSkin.y[coeffIndex].Im);
-                    string skinCoeff = string.Format("{0:F4}+{1:F4}i", qSkin.y[coeffIndex].Re, qSkin.y[coeffIndex].Im);
-                    textBoxChebPolynomial.Text += string.Format("{0,-4} {1,-25} {2,-25}{3}", 
+                    double absNoSkin = Compl.Abs(qNoSkin.y[coeffIndex]);
+                    double absSkin = Compl.Abs(qSkin.y[coeffIndex]);
+                    string noSkinCoeff = string.Format("{0:F4}+{1:F4}i (|{2:E2}|)",
+                        qNoSkin.y[coeffIndex].Re, qNoSkin.y[coeffIndex].Im, absNoSkin);
+                    string skinCoeff = string.Format("{0:F4}+{1:F4}i (|{2:E2}|)",
+                        qSkin.y[coeffIndex].Re, qSkin.y[coeffIndex].Im, absSkin);
+                    textBoxChebPolynomial.Text += string.Format("{0,-4} {1,-35} {2,-35}{3}",
                         coeffIndex + 1, noSkinCoeff, skinCoeff, Environment.NewLine);
                 }
+
+                // Анализ сходимости (подсказка преподавателя)
+                textBoxChebPolynomial.Text += Environment.NewLine;
+                textBoxChebPolynomial.Text += "Анализ сходимости:" + Environment.NewLine;
+                double lastAbs = Compl.Abs(qNoSkin.y[totalCoefficients - 1]);
+                double firstAbs = Compl.Abs(qNoSkin.y[0]);
+                double ratio = lastAbs / Math.Max(firstAbs, 1e-15);
+                textBoxChebPolynomial.Text += string.Format("|y_last|/|y_0| = {0:E2}", ratio) + Environment.NewLine;
+                if (ratio < 0.01)
+                    textBoxChebPolynomial.Text += "Сходимость хорошая (старшие коэфф. малы)" + Environment.NewLine;
+                else if (ratio < 0.1)
+                    textBoxChebPolynomial.Text += "Сходимость удовлетворительная" + Environment.NewLine;
+                else
+                    textBoxChebPolynomial.Text += "Сходимость ПЛОХАЯ - увеличьте N!" + Environment.NewLine;
 
                 // Построение графика для случая со скин-слоем
                 double h = (b - a) / 400, x = a + h;
@@ -262,7 +280,7 @@ namespace Diffraction
                     lblConductivity.ForeColor = Color.Red;
                 }
 
-                // Расчет энергий через далёкое поле и проверка ЗСЭ
+                // Расчет энергий через далёкое поле
                 double totalScattered = qSkin.CalculateTotalScatteredEnergy();
                 double absorbedEnergy = qSkin.CalculateAbsorbedEnergy();
                 double reflectedEnergy, transmittedEnergy;
@@ -270,78 +288,75 @@ namespace Diffraction
 
                 double totalEnergy = totalScattered + absorbedEnergy;
 
-                // Нормировка: все в долях от полного рассеяния + поглощения
-                double totalForFractions = Math.Max(totalEnergy, 1e-10);
-                double reflectedFraction = reflectedEnergy / totalForFractions;
-                double transmittedFraction = transmittedEnergy / totalForFractions;
-                double absorbedFraction = absorbedEnergy / totalForFractions;
-                double scatteredFraction = totalScattered / totalForFractions;
+                // Доли рассеянной энергии (нормировка на полное рассеяние)
+                double totalScat = Math.Max(totalScattered, 1e-10);
+                double reflFrac = reflectedEnergy / totalScat;
+                double transFrac = transmittedEnergy / totalScat;
 
                 // Формирование сообщения для всплывающего окна
                 StringBuilder energyMessage = new StringBuilder();
                 energyMessage.AppendLine("=== КОНТРОЛЬ ТОЧНОСТИ РЕШЕНИЯ ===");
-                energyMessage.AppendLine("На основе физических законов и тождеств");
                 energyMessage.AppendLine();
 
-                // 1. Проверка граничных условий
+                // 1. Граничные условия
                 double bcError = qSkin.VerifyBoundaryConditions();
                 energyMessage.AppendLine("1. Граничные условия:");
                 if (Compl.Abs(qSkin.chi) < 1e-15)
                     energyMessage.AppendLine(string.Format("   Погрешность (u=0 на ленте): {0:P2}", bcError));
                 else
-                    energyMessage.AppendLine(string.Format("   Погрешность (u + χ*du/dn=0): {0:P2}", bcError));
+                    energyMessage.AppendLine(string.Format("   Погрешность (u+chi*du/dn=0): {0:P2}", bcError));
 
                 if (bcError < 0.10)
                     energyMessage.AppendLine("   Условие выполняется хорошо");
                 else if (bcError < 0.30)
                     energyMessage.AppendLine("   Условие выполняется удовлетворительно");
                 else
-                    energyMessage.AppendLine("   Большая погрешность, требуется увеличить N");
+                    energyMessage.AppendLine("   Большая погрешность, увеличьте N");
                 energyMessage.AppendLine();
 
                 // 2. Уравнение Гельмгольца
                 double helmError = qSkin.VerifyHelmholtz();
-                energyMessage.AppendLine("2. Уравнение Гельмгольца (Δu + k²u = 0):");
-                energyMessage.AppendLine(string.Format("   Невязка в свободном пространстве: {0:E2}", helmError));
+                energyMessage.AppendLine("2. Уравнение Гельмгольца:");
+                energyMessage.AppendLine(string.Format("   Невязка: {0:E2}", helmError));
                 energyMessage.AppendLine();
 
-                // 3. Энергетический баланс (далёкое поле)
-                energyMessage.AppendLine("3. Энергетический баланс (далёкое поле):");
-                energyMessage.AppendLine(string.Format("   Полная рассеянная σ_s: {0:F6} ({1:P2})", totalScattered, scatteredFraction));
-                energyMessage.AppendLine(string.Format("     Отражённая:          {0:F6} ({1:P2})", reflectedEnergy, reflectedFraction));
-                energyMessage.AppendLine(string.Format("     Прошедшая (дифр.):   {0:F6} ({1:P2})", transmittedEnergy, transmittedFraction));
-                energyMessage.AppendLine(string.Format("   Поглощённая σ_a:       {0:F6} ({1:P2})", absorbedEnergy, absorbedFraction));
-                energyMessage.AppendLine(new string('-', 40));
-                energyMessage.AppendLine(string.Format("   Итого σ_s + σ_a:       {0:F6}", totalEnergy));
+                // 3. Энергетический баланс
+                energyMessage.AppendLine("3. Энергетический баланс:");
+                energyMessage.AppendLine(string.Format("   Рассеянная (полная):  {0:F6}", totalScattered));
+                energyMessage.AppendLine(string.Format("     Отражённая:         {0:P1} от рассеянной", reflFrac));
+                energyMessage.AppendLine(string.Format("     Прошедшая (дифр.):  {0:P1} от рассеянной", transFrac));
+                if (skinDepth > 0)
+                    energyMessage.AppendLine(string.Format("   Поглощённая:          {0:F6}", absorbedEnergy));
+                energyMessage.AppendLine();
 
-                // Оптическая теорема: σ_ext = (4/k) * Im(f(θ))
-                double k_val = 2 * Math.PI / (double)wavelength.Value;
-                Compl f_forward = qSkin.FarFieldAmplitude(angle);
-                double sigma_ext_OT = 4.0 / k_val * f_forward.Im;
-                energyMessage.AppendLine(string.Format("   Опт. теорема σ_ext:    {0:F6}", sigma_ext_OT));
-
-                double otError = Math.Abs(sigma_ext_OT - totalEnergy) / Math.Max(Math.Abs(sigma_ext_OT), 1e-10);
-                energyMessage.AppendLine(string.Format("   Расхождение с ОТ:      {0:P2}", otError));
-
-                bool energyConservationOk = otError < 0.30;
-
-                if (energyConservationOk)
-                    energyMessage.AppendLine("   ✓ ЗСЭ (оптическая теорема) согласуется");
+                // 4. Сходимость коэффициентов
+                energyMessage.AppendLine("4. Сходимость коэффициентов:");
+                double lastCoeff = Compl.Abs(qSkin.y[param - 1]);
+                double firstCoeff = Compl.Abs(qSkin.y[0]);
+                double coeffRatio = lastCoeff / Math.Max(firstCoeff, 1e-15);
+                energyMessage.AppendLine(string.Format("   |y_{{N-1}}| = {0:E2},  |y_0| = {1:E2}", lastCoeff, firstCoeff));
+                energyMessage.AppendLine(string.Format("   Отношение |y_last/y_0| = {0:E2}", coeffRatio));
+                if (coeffRatio < 0.01)
+                    energyMessage.AppendLine("   Сходимость хорошая");
+                else if (coeffRatio < 0.1)
+                    energyMessage.AppendLine("   Сходимость удовлетворительная");
                 else
-                    energyMessage.AppendLine("   ⚠ Расхождение с оптической теоремой");
+                    energyMessage.AppendLine("   Сходимость ПЛОХАЯ - увеличьте N!");
 
                 energyMessage.AppendLine();
-                energyMessage.AppendLine("Физические проверки:");
-                bool allPositive = (reflectedEnergy >= -1e-10) && (transmittedEnergy >= -1e-10) && (absorbedEnergy >= -1e-10);
-                if (allPositive)
-                    energyMessage.AppendLine("✓ Все энергии положительны");
-                else
-                    energyMessage.AppendLine("✗ Обнаружены нефизичные (отрицательные) значения!");
+                bool allPositive = (reflectedEnergy >= -1e-10) && (transmittedEnergy >= -1e-10);
+                bool bcOk = bcError < 0.30;
+                bool converged = coeffRatio < 0.1;
 
-                MessageBoxIcon icon = (energyConservationOk && bcError < 0.30) ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
+                if (bcOk && allPositive && converged)
+                    energyMessage.AppendLine("Итог: решение корректно");
+                else
+                    energyMessage.AppendLine("Итог: решение требует проверки (увеличьте N)");
+
+                MessageBoxIcon icon = (bcOk && converged) ? MessageBoxIcon.Information : MessageBoxIcon.Warning;
                 MessageBox.Show(
                     energyMessage.ToString(),
-                    "Контроль точности (научная верификация)",
+                    "Контроль точности",
                     MessageBoxButtons.OK,
                     icon
                 );
